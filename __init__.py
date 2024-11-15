@@ -1,6 +1,6 @@
 # only import if running as a custom node
 try:
-    import comfy.utils
+    import totoro.utils
 except ImportError:
     pass
 else:
