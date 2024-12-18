@@ -12,7 +12,7 @@ python convert.py --src E:\models\unet\flux1-dev.safetensors
 ```
 
 
-To quantize the model, first apply the provided patch to the llama.cpp repo you've just cloned. If you get a "corrupt patch" error, you may have to [change the line endings in the patch file](https://github.com/city96/ComfyUI-GGUF/issues/90#issuecomment-2323011648).
+To quantize the model, first apply the provided patch to the llama.cpp repo you've just cloned. If you get a "corrupt patch" error, you may have to [change the line endings in the patch file](https://github.com/city96/TotoroUI-GGUF/issues/90#issuecomment-2323011648).
 ```
 cd llama.cpp
 git checkout tags/b3600
@@ -43,7 +43,7 @@ You can extract the patch again with `git diff src\llama.cpp > lcpp.patch` if yo
 
 
 > [!WARNING]  
-> Do not use the diffusers UNET for flux, it won't work, use the default/reference checkpoint format. This is due to q/k/v being merged into one qkv key. You can convert it by loading it in ComfyUI and saving it using the built-in "ModelSave" node.
+> Do not use the diffusers UNET for flux, it won't work, use the default/reference checkpoint format. This is due to q/k/v being merged into one qkv key. You can convert it by loading it in TotoroUI and saving it using the built-in "ModelSave" node.
 
 
 > [!WARNING]  

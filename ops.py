@@ -2,8 +2,8 @@
 import gguf
 import torch
 
-import comfy.ops
-import comfy.model_management
+import totoro.ops
+import totoro.model_management
 from .dequant import dequantize_tensor, is_quantized
 
 class GGMLTensor(torch.Tensor):
@@ -33,7 +33,7 @@ class GGMLTensor(torch.Tensor):
         return self
 
     def copy_(self, *args, **kwargs):
-        # fixes .weight.copy_ in comfy/clip_model/CLIPTextModel
+        # fixes .weight.copy_ in totoro/clip_model/CLIPTextModel
         try:
             return super().copy_(*args, **kwargs)
         except Exception as e:
@@ -59,7 +59,7 @@ class GGMLLayer(torch.nn.Module):
     """
     This (should) be responsible for de-quantizing on the fly
     """
-    comfy_cast_weights = True
+    totoro_cast_weights = True
     dequant_dtype = None
     patch_dtype = None
     torch_compatible_tensor_types = {None, gguf.GGMLQuantizationType.F32, gguf.GGMLQuantizationType.F16}
@@ -144,20 +144,20 @@ class GGMLLayer(torch.nn.Module):
                 device = input.device
 
         bias = None
-        non_blocking = comfy.model_management.device_supports_non_blocking(device)
+        non_blocking = totoro.model_management.device_supports_non_blocking(device)
         if s.bias is not None:
             bias = s.get_weight(s.bias.to(device), dtype)
-            bias = comfy.ops.cast_to(bias, bias_dtype, device, non_blocking=non_blocking, copy=False)
+            bias = totoro.ops.cast_to(bias, bias_dtype, device, non_blocking=non_blocking, copy=False)
 
         weight = s.get_weight(s.weight.to(device), dtype)
-        weight = comfy.ops.cast_to(weight, dtype, device, non_blocking=non_blocking, copy=False)
+        weight = totoro.ops.cast_to(weight, dtype, device, non_blocking=non_blocking, copy=False)
         return weight, bias
 
-    def forward_comfy_cast_weights(self, input, *args, **kwargs):
+    def forward_totoro_cast_weights(self, input, *args, **kwargs):
         if self.is_ggml_quantized():
             out = self.forward_ggml_cast_weights(input, *args, **kwargs)
         else:
-            out = super().forward_comfy_cast_weights(input, *args, **kwargs)
+            out = super().forward_totoro_cast_weights(input, *args, **kwargs)
 
         # non-ggml forward might still propagate custom tensor class
         if isinstance(out, GGMLTensor):
@@ -167,11 +167,11 @@ class GGMLLayer(torch.nn.Module):
     def forward_ggml_cast_weights(self, input):
         raise NotImplementedError
 
-class GGMLOps(comfy.ops.manual_cast):
+class GGMLOps(totoro.ops.manual_cast):
     """
     Dequantize weights on the fly before doing the compute
     """
-    class Linear(GGMLLayer, comfy.ops.manual_cast.Linear):
+    class Linear(GGMLLayer, totoro.ops.manual_cast.Linear):
         def __init__(self, in_features, out_features, bias=True, device=None, dtype=None):
             torch.nn.Module.__init__(self)
             # TODO: better workaround for reserved memory spike on windows
@@ -186,12 +186,12 @@ class GGMLOps(comfy.ops.manual_cast):
             weight, bias = self.cast_bias_weight(input)
             return torch.nn.functional.linear(input, weight, bias)
 
-    class Conv2d(GGMLLayer, comfy.ops.manual_cast.Conv2d):
+    class Conv2d(GGMLLayer, totoro.ops.manual_cast.Conv2d):
         def forward_ggml_cast_weights(self, input):
             weight, bias = self.cast_bias_weight(input)
             return self._conv_forward(input, weight, bias)
 
-    class Embedding(GGMLLayer, comfy.ops.manual_cast.Embedding):
+    class Embedding(GGMLLayer, totoro.ops.manual_cast.Embedding):
         def forward_ggml_cast_weights(self, input, out_dtype=None):
             output_dtype = out_dtype
             if self.weight.dtype == torch.float16 or self.weight.dtype == torch.bfloat16:
@@ -201,14 +201,14 @@ class GGMLOps(comfy.ops.manual_cast):
                 input, weight, self.padding_idx, self.max_norm, self.norm_type, self.scale_grad_by_freq, self.sparse
             ).to(dtype=output_dtype)
 
-    class LayerNorm(GGMLLayer, comfy.ops.manual_cast.LayerNorm):
+    class LayerNorm(GGMLLayer, totoro.ops.manual_cast.LayerNorm):
         def forward_ggml_cast_weights(self, input):
             if self.weight is None:
-                return super().forward_comfy_cast_weights(input)
+                return super().forward_totoro_cast_weights(input)
             weight, bias = self.cast_bias_weight(input)
             return torch.nn.functional.layer_norm(input, self.normalized_shape, weight, bias, self.eps)
 
-    class GroupNorm(GGMLLayer, comfy.ops.manual_cast.GroupNorm):
+    class GroupNorm(GGMLLayer, totoro.ops.manual_cast.GroupNorm):
         def forward_ggml_cast_weights(self, input):
             weight, bias = self.cast_bias_weight(input)
             return torch.nn.functional.group_norm(input, self.num_groups, weight, bias, self.eps)

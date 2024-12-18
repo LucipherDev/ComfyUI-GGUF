@@ -4,10 +4,10 @@ import gguf
 import copy
 import logging
 
-import comfy.sd
-import comfy.utils
-import comfy.model_management
-import comfy.model_patcher
+import totoro.sd
+import totoro.utils
+import totoro.model_management
+import totoro.model_patcher
 import folder_paths
 
 from .ops import GGMLTensor, GGMLOps, move_patch_to_device
@@ -23,7 +23,7 @@ if "clip_gguf" not in folder_paths.folder_names_and_paths:
     folder_paths.folder_names_and_paths["clip_gguf"] = (orig[0], {".gguf"})
 
 def gguf_sd_loader_get_orig_shape(reader, tensor_name):
-    field_key = f"comfy.gguf.orig_shape.{tensor_name}"
+    field_key = f"totoro.gguf.orig_shape.{tensor_name}"
     field = reader.get_field(field_key)
     if field is None:
         return None
@@ -130,16 +130,16 @@ def gguf_clip_loader(path):
 
 # TODO: Temporary fix for now
 import collections
-class GGUFModelPatcher(comfy.model_patcher.ModelPatcher):
+class GGUFModelPatcher(totoro.model_patcher.ModelPatcher):
     patch_on_device = False
 
     def patch_weight_to_device(self, key, device_to=None, inplace_update=False):
         if key not in self.patches:
             return
-        weight = comfy.utils.get_attr(self.model, key)
+        weight = totoro.utils.get_attr(self.model, key)
 
         try:
-            from comfy.lora import calculate_weight
+            from totoro.lora import calculate_weight
         except Exception:
             calculate_weight = self.calculate_weight
 
@@ -157,17 +157,17 @@ class GGUFModelPatcher(comfy.model_patcher.ModelPatcher):
                 )
 
             if device_to is not None:
-                temp_weight = comfy.model_management.cast_to_device(weight, device_to, torch.float32, copy=True)
+                temp_weight = totoro.model_management.cast_to_device(weight, device_to, torch.float32, copy=True)
             else:
                 temp_weight = weight.to(torch.float32, copy=True)
 
             out_weight = calculate_weight(patches, temp_weight, key)
-            out_weight = comfy.float.stochastic_rounding(out_weight, weight.dtype)
+            out_weight = totoro.float.stochastic_rounding(out_weight, weight.dtype)
 
         if inplace_update:
-            comfy.utils.copy_to_param(self.model, key, out_weight)
+            totoro.utils.copy_to_param(self.model, key, out_weight)
         else:
-            comfy.utils.set_attr_param(self.model, key, out_weight)
+            totoro.utils.set_attr_param(self.model, key, out_weight)
 
     def unpatch_model(self, device_to=None, unpatch_weights=True):
         if unpatch_weights:
@@ -252,7 +252,7 @@ class UnetLoaderGGUF:
         # init model
         unet_path = folder_paths.get_full_path("unet", unet_name)
         sd = gguf_sd_loader(unet_path)
-        model = comfy.sd.load_diffusion_model_state_dict(
+        model = totoro.sd.load_diffusion_model_state_dict(
             sd, model_options={"custom_operations": ops}
         )
         if model is None:
@@ -277,14 +277,14 @@ class UnetLoaderGGUFAdvanced(UnetLoaderGGUF):
     TITLE = "Unet Loader (GGUF/Advanced)"
 
 clip_name_dict = {
-    "stable_diffusion": comfy.sd.CLIPType.STABLE_DIFFUSION,
-    "stable_cascade": comfy.sd.CLIPType.STABLE_CASCADE,
-    "stable_audio": comfy.sd.CLIPType.STABLE_AUDIO,
-    "sdxl": comfy.sd.CLIPType.STABLE_DIFFUSION,
-    "sd3": comfy.sd.CLIPType.SD3,
-    "flux": comfy.sd.CLIPType.FLUX,
-    "mochi": getattr(comfy.sd.CLIPType, "MOCHI", None),
-    "ltxv": getattr(comfy.sd.CLIPType, "LTXV", None),
+    "stable_diffusion": totoro.sd.CLIPType.STABLE_DIFFUSION,
+    "stable_cascade": totoro.sd.CLIPType.STABLE_CASCADE,
+    "stable_audio": totoro.sd.CLIPType.STABLE_AUDIO,
+    "sdxl": totoro.sd.CLIPType.STABLE_DIFFUSION,
+    "sd3": totoro.sd.CLIPType.SD3,
+    "flux": totoro.sd.CLIPType.FLUX,
+    "mochi": getattr(totoro.sd.CLIPType, "MOCHI", None),
+    "ltxv": getattr(totoro.sd.CLIPType, "LTXV", None),
 }
 
 class CLIPLoaderGGUF:
@@ -315,17 +315,17 @@ class CLIPLoaderGGUF:
             if p.endswith(".gguf"):
                 sd = gguf_clip_loader(p)
             else:
-                sd = comfy.utils.load_torch_file(p, safe_load=True)
+                sd = totoro.utils.load_torch_file(p, safe_load=True)
             clip_data.append(sd)
         return clip_data
 
     def load_patcher(self, clip_paths, clip_type, clip_data):
-        clip = comfy.sd.load_text_encoder_state_dicts(
+        clip = totoro.sd.load_text_encoder_state_dicts(
             clip_type = clip_type,
             state_dicts = clip_data,
             model_options = {
                 "custom_operations": GGMLOps,
-                "initial_device": comfy.model_management.text_encoder_offload_device()
+                "initial_device": totoro.model_management.text_encoder_offload_device()
             },
             embedding_directory = folder_paths.get_folder_paths("embeddings"),
         )
@@ -334,16 +334,16 @@ class CLIPLoaderGGUF:
         # for some reason this is just missing in some SAI checkpoints
         if getattr(clip.cond_stage_model, "clip_l", None) is not None:
             if getattr(clip.cond_stage_model.clip_l.transformer.text_projection.weight, "tensor_shape", None) is None:
-                clip.cond_stage_model.clip_l.transformer.text_projection = comfy.ops.manual_cast.Linear(768, 768)
+                clip.cond_stage_model.clip_l.transformer.text_projection = totoro.ops.manual_cast.Linear(768, 768)
         if getattr(clip.cond_stage_model, "clip_g", None) is not None:
             if getattr(clip.cond_stage_model.clip_g.transformer.text_projection.weight, "tensor_shape", None) is None:
-                clip.cond_stage_model.clip_g.transformer.text_projection = comfy.ops.manual_cast.Linear(1280, 1280)
+                clip.cond_stage_model.clip_g.transformer.text_projection = totoro.ops.manual_cast.Linear(1280, 1280)
 
         return clip
 
     def load_clip(self, clip_name, type="stable_diffusion"):
         clip_path = folder_paths.get_full_path("clip", clip_name)
-        clip_type = clip_name_dict.get(type, comfy.sd.CLIPType.STABLE_DIFFUSION)
+        clip_type = clip_name_dict.get(type, totoro.sd.CLIPType.STABLE_DIFFUSION)
         return (self.load_patcher([clip_path], clip_type, self.load_data([clip_path])),)
 
 class DualCLIPLoaderGGUF(CLIPLoaderGGUF):
@@ -364,7 +364,7 @@ class DualCLIPLoaderGGUF(CLIPLoaderGGUF):
         clip_path1 = folder_paths.get_full_path("clip", clip_name1)
         clip_path2 = folder_paths.get_full_path("clip", clip_name2)
         clip_paths = (clip_path1, clip_path2)
-        clip_type = clip_name_dict.get(type, comfy.sd.CLIPType.STABLE_DIFFUSION)
+        clip_type = clip_name_dict.get(type, totoro.sd.CLIPType.STABLE_DIFFUSION)
         return (self.load_patcher(clip_paths, clip_type, self.load_data(clip_paths)),)
 
 class TripleCLIPLoaderGGUF(CLIPLoaderGGUF):
@@ -386,7 +386,7 @@ class TripleCLIPLoaderGGUF(CLIPLoaderGGUF):
         clip_path2 = folder_paths.get_full_path("clip", clip_name2)
         clip_path3 = folder_paths.get_full_path("clip", clip_name3)
         clip_paths = (clip_path1, clip_path2, clip_path3)
-        clip_type = clip_name_dict.get(type, comfy.sd.CLIPType.STABLE_DIFFUSION)
+        clip_type = clip_name_dict.get(type, totoro.sd.CLIPType.STABLE_DIFFUSION)
         return (self.load_patcher(clip_paths, clip_type, self.load_data(clip_paths)),)
 
 NODE_CLASS_MAPPINGS = {
